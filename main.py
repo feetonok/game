@@ -14,10 +14,12 @@ pygame.display.set_caption("Матрица: Начало")
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (150, 150, 150)
+TRANSPARENT_BLACK = (0, 0, 0, 128)  # Полупрозрачный чёрный
 
 # Шрифты
 font = pygame.font.Font(None, 74)
 small_font = pygame.font.Font(None, 50)
+dialog_font = pygame.font.Font(None, 36)
 
 # Загрузка изображений
 background = pygame.image.load("background.png")
@@ -39,45 +41,70 @@ VIEW_HEIGHT = 5
 SCALED_TILE_SIZE = SCREEN_WIDTH // VIEW_WIDTH
 
 
-# Функция для отрисовки текста
-def draw_text(text, font, color, surface, x, y):
+# Функция для отрисовки текста в главном меню
+def draw_menu_text(text, font, color, surface, x, y):
     text_obj = font.render(text, True, color)
     text_rect = text_obj.get_rect(center=(x, y))
+    surface.blit(text_obj, text_rect)
+
+
+# Функция для отрисовки текста в диалогах
+def draw_dialog_text(text, font, color, surface, x, y):
+    text_obj = font.render(text, True, color)
+    text_rect = text_obj.get_rect(topleft=(x, y))
     surface.blit(text_obj, text_rect)
 
 
 # Функция для отрисовки кнопок
 def draw_button(text, font, color, surface, x, y, width, height):
     pygame.draw.rect(surface, color, (x, y, width, height))
-    draw_text(text, font, BLACK, surface, x + width // 2, y + height // 2)
+    draw_menu_text(text, font, BLACK, surface, x + width // 2, y + height // 2)
 
 
 # Класс для диалогов
 class DialogBox:
-    def __init__(self, text, name, portrait):
-        self.text = text
+    def __init__(self, name, portrait, dialogues):
         self.name = name
         self.portrait = portrait
+        self.dialogues = dialogues
+        self.current_dialogue = 0
         self.current_text = ""
         self.char_index = 0
         self.delay = 50  # Задержка между символами
         self.last_update = pygame.time.get_ticks()
+        self.finished = False
 
     def update(self):
         now = pygame.time.get_ticks()
         if now - self.last_update > self.delay:
             self.last_update = now
-            if self.char_index < len(self.text):
-                self.current_text += self.text[self.char_index]
+            if self.char_index < len(self.dialogues[self.current_dialogue]):
+                self.current_text += self.dialogues[self.current_dialogue][self.char_index]
                 self.char_index += 1
 
+    def next_dialogue(self):
+        if self.current_dialogue < len(self.dialogues) - 1:
+            self.current_dialogue += 1
+            self.current_text = ""
+            self.char_index = 0
+        else:
+            self.finished = True
+
     def draw(self, screen):
-        # Отрисовка портрета
-        screen.blit(self.portrait, (50, SCREEN_HEIGHT - 200))
+        # Создаём полупрозрачный фон для диалога
+        dialog_bg = pygame.Surface((SCREEN_WIDTH - 100, 200), pygame.SRCALPHA)
+        dialog_bg.fill((0, 0, 0, 128))  # Полупрозрачный чёрный
+        screen.blit(dialog_bg, (50, SCREEN_HEIGHT - 250))
+
+        # Отрисовка портрета (справа)
+        portrait_scaled = pygame.transform.scale(self.portrait, (150, 200))  # Растягиваем портрет
+        screen.blit(portrait_scaled, (SCREEN_WIDTH - 200, SCREEN_HEIGHT - 250))
+
         # Отрисовка имени
-        draw_text(self.name, small_font, WHITE, screen, 200, SCREEN_HEIGHT - 180)
+        draw_dialog_text(self.name, dialog_font, WHITE, screen, 70, SCREEN_HEIGHT - 230)
+
         # Отрисовка текста
-        draw_text(self.current_text, small_font, WHITE, screen, 200, SCREEN_HEIGHT - 140)
+        draw_dialog_text(self.current_text, dialog_font, WHITE, screen, 70, SCREEN_HEIGHT - 200)
 
 
 # Функция для загрузки карты
@@ -127,12 +154,14 @@ def main_menu():
 
     while True:
         screen.blit(background, (0, 0))
-        draw_text("Матрица: Начало", font, WHITE, screen, SCREEN_WIDTH // 2, 100)
+        draw_menu_text("Матрица: Начало", font, WHITE, screen, SCREEN_WIDTH // 2, 100)
 
         # Отрисовка кнопок
         for i, button_text in enumerate(buttons):
             color = GRAY if i != selected_button else WHITE
-            draw_button(button_text, small_font, color, screen, SCREEN_WIDTH // 2 - 100, 200 + i * 70, 200, 50)
+            button_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 200 + i * 70, 200, 50)
+            pygame.draw.rect(screen, color, button_rect)
+            draw_menu_text(button_text, small_font, BLACK, screen, SCREEN_WIDTH // 2, 225 + i * 70)
 
         # Обработка событий
         for event in pygame.event.get():
@@ -187,6 +216,12 @@ def game_loop():
     player_direction = "down"  # Направление игрока
     camera_x, camera_y = player_pos[0], player_pos[1]  # Камера следует за игроком
 
+    # Диалоги для NPC
+    npc_dialogues = {
+        (6, 3): ["Приветствую! Я МАШИНА.", "Я помогу тебе создать твоего персонажа.", "Начнём?"],
+        (8, 7): ["...", "Ты снова здесь?", "Что тебе нужно?"],
+    }
+
     while True:
         screen.fill(BLACK)  # Очистка экрана
 
@@ -212,47 +247,60 @@ def game_loop():
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                new_x, new_y = player_pos[0], player_pos[1]
-                if event.key == pygame.K_UP:
-                    new_y -= 1
-                    player_direction = "up"
-                if event.key == pygame.K_DOWN:
-                    new_y += 1
-                    player_direction = "down"
-                if event.key == pygame.K_LEFT:
-                    new_x -= 1
-                    player_direction = "left"
-                if event.key == pygame.K_RIGHT:
-                    new_x += 1
-                    player_direction = "right"
+                if not dialog or dialog.finished:
+                    new_x, new_y = player_pos[0], player_pos[1]
+                    if event.key == pygame.K_UP:
+                        new_y -= 1
+                        player_direction = "up"
+                    if event.key == pygame.K_DOWN:
+                        new_y += 1
+                        player_direction = "down"
+                    if event.key == pygame.K_LEFT:
+                        new_x -= 1
+                        player_direction = "left"
+                    if event.key == pygame.K_RIGHT:
+                        new_x += 1
+                        player_direction = "right"
 
-                # Проверка коллизии
-                if 0 <= new_x < len(current_map[0]) and 0 <= new_y < len(current_map):
-                    if current_map[new_y][new_x] not in ['#', 'D', '?']:  # Если нет стены, двери или NPC
-                        player_pos[0], player_pos[1] = new_x, new_y
+                    # Проверка коллизии
+                    if 0 <= new_x < len(current_map[0]) and 0 <= new_y < len(current_map):
+                        if current_map[new_y][new_x] not in ['#', 'D', '?']:  # Если нет стены, двери или NPC
+                            player_pos[0], player_pos[1] = new_x, new_y
 
-                # Обновление камеры
-                camera_x = player_pos[0]
-                camera_y = player_pos[1]
+                    # Обновление камеры
+                    camera_x = player_pos[0]
+                    camera_y = player_pos[1]
 
-                # Ограничение камеры краями карты
-                camera_x = max(VIEW_WIDTH // 2, min(camera_x, len(current_map[0]) - VIEW_WIDTH // 2 - 1))
-                camera_y = max(VIEW_HEIGHT // 2, min(camera_y, len(current_map) - VIEW_HEIGHT // 2 - 1))
+                    # Ограничение камеры краями карты
+                    camera_x = max(VIEW_WIDTH // 2, min(camera_x, len(current_map[0]) - VIEW_WIDTH // 2 - 1))
+                    camera_y = max(VIEW_HEIGHT // 2, min(camera_y, len(current_map) - VIEW_HEIGHT // 2 - 1))
 
                 if event.key == pygame.K_z:  # Взаимодействие
-                    if is_facing_object(player_pos, player_direction, current_map, '?'):  # NPC
-                        dialog = DialogBox("Приветствую! Я МАШИНА.", "МАШИНА", portrait)
-                    elif is_facing_object(player_pos, player_direction, current_map, 'D'):  # Дверь
-                        if current_map == load_map("room.txt"):  # Переход из комнаты на улицу
-                            current_map = load_map("street.txt")
-                            door_pos = find_door(current_map)  # Ищем дверь на улице
-                            if door_pos:
-                                player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
-                        elif current_map == load_map("street.txt"):  # Переход с улицы в комнату
-                            current_map = load_map("room.txt")
-                            door_pos = find_door(current_map)  # Ищем дверь в комнате
-                            if door_pos:
-                                player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
+                    if dialog:
+                        if dialog.finished:
+                            dialog = None  # Завершаем диалог
+                        else:
+                            dialog.next_dialogue()  # Переход к следующей реплике
+                    else:
+                        if is_facing_object(player_pos, player_direction, current_map, '?'):  # NPC
+                            npc_pos = (player_pos[0], player_pos[1] - 1) if player_direction == "up" else \
+                                (player_pos[0], player_pos[1] + 1) if player_direction == "down" else \
+                                    (player_pos[0] - 1, player_pos[1]) if player_direction == "left" else \
+                                        (player_pos[0] + 1, player_pos[1])
+                            if npc_pos in npc_dialogues:
+                                print(f"Взаимодействие с NPC на позиции: {npc_pos}")  # Отладочное сообщение
+                                dialog = DialogBox("NPC", portrait, npc_dialogues[npc_pos])
+                        elif is_facing_object(player_pos, player_direction, current_map, 'D'):  # Дверь
+                            if current_map == load_map("room.txt"):  # Переход из комнаты на улицу
+                                current_map = load_map("street.txt")
+                                door_pos = find_door(current_map)  # Ищем дверь на улице
+                                if door_pos:
+                                    player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
+                            elif current_map == load_map("street.txt"):  # Переход с улицы в комнату
+                                current_map = load_map("room.txt")
+                                door_pos = find_door(current_map)  # Ищем дверь в комнате
+                                if door_pos:
+                                    player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
 
         pygame.display.flip()
 
