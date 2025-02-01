@@ -1,9 +1,17 @@
 import pygame
 import sys
-import time
+import os
+from captcha.image import ImageCaptcha
+import random
+
 
 # Инициализация Pygame
 pygame.init()
+try:
+    pygame.mixer.init()
+except pygame.error as e:
+    print(f"Ошибка инициализации звука: {e}. Игра продолжит работу без звука.")
+    pygame.mixer.quit()
 
 # Настройки экрана
 SCREEN_WIDTH = 1280
@@ -22,14 +30,27 @@ font = pygame.font.Font(None, 74)
 small_font = pygame.font.Font(None, 50)
 dialog_font = pygame.font.Font(None, 36)
 
+map_textures = []
+
+object_textures = {}
+
 # Загрузка изображений
 background = pygame.image.load("background.png")
+aki_portrait = pygame.image.load('aki._portrait.png')
 portrait = pygame.image.load("portrait.png")
-player_image = pygame.image.load("player.png")
-wall_image = pygame.image.load("wall.png")
-floor_image = pygame.image.load("floor.png")
+aki_image = pygame.image.load("aki.png")
 door_image = pygame.image.load("door.png")
 npc_image = pygame.image.load("npc.png")
+
+floor_textures = [
+    pygame.image.load("floor1.png"),
+    pygame.image.load("floor2.png"),
+    pygame.image.load("floor3.png")
+]
+wall_textures = [
+    pygame.image.load("wall1.png"),
+    pygame.image.load("wall2.png")
+]
 
 # Размер тайла
 TILE_SIZE = 50
@@ -47,26 +68,150 @@ resolution = (SCREEN_WIDTH, SCREEN_HEIGHT)  # Разрешение экрана
 
 # Переменные для редактора персонажа
 player_colors = {
-    "hair": (255, 0, 0),  # Красный
-    "shirt": (0, 255, 0),  # Зелёный
-    "pants": (0, 0, 255),  # Синий
-    "shoes": (255, 255, 0)  # Жёлтый
+    "hair": (192, 192, 192),
+    "shirt": (128, 0, 0),
+    "pants": (105, 105, 105),
+    "shoes": (205, 133, 63)
 }
 
-# Имя NPC
-npc_name = "???"
+# Имя NPC и игрока
+npc_name = '???'
+username = os.getlogin()
 
-npc_dialogues = {
-        (6, 3): ["Приветствую! Я МАШИНА.", "Я помогу тебе создать твоего персонажа.", "Начнём?"],
-        (8, 7): ["...", "Ты снова здесь?", "Что тебе нужно?"],
-    }
+npc_data = {
+    "room": [],  # NPC в комнате
+    "hallway": [
+        {
+            "position": (5, 4),
+            "name": "Почтальон",
+            "portrait": "postman_portrait.png",
+            "dialogues": [
+                "Здравствуйте! Вы недавно отправляли заявку по поиску работы, это вы?",
+                "Ну да, а разве не видно?",
+                "Пожалуйста пройдите проверку, что вы не робот"
+            ]
+        }
+    ],
+    "street": [
+        {
+            "position": (10, 5),
+            "name": "Рыбак",
+            "portrait": "fisherman_portrait.png",
+            "dialogues": [
+                "Здаров малой!",
+                "Слушай хочешь попробовать порыбачить?"
+            ]
+        }
+    ]
+}
+
+# Глобальный словарь для хранения информации о дверях
+doors_data = {
+    "room": [
+        {
+            "position": (3, 0),  # Дверь в комнате
+            "target_map": "hallway.txt",  # Переход в коридор
+            "target_position": [3, 3]  # Позиция игрока в коридоре
+        }
+    ],
+    "hallway": [
+        {
+            "position": (3, 4),  # Дверь в коридоре
+            "target_map": "room.txt",  # Переход обратно в комнату
+            "target_position": [3, 1]  # Позиция игрока в комнате
+        },
+        {
+            "position": (12, 2),  # Дверь на улицу
+            "target_map": "street.txt",  # Переход на улицу
+            "target_position": [1, 1]  # Позиция игрока на улице
+        }
+    ]
+}
+
+objects_data = {
+    "room": [
+        {
+            "position": (1, 1),  # Координаты объекта
+            "texture": pygame.image.load("table_with_laptop.png"),  # Текстура объекта
+            "dialogues": [
+                "Это мой ноутбук. На нём я пишу код и ищу работу.",
+                "Иногда кажется, что он единственный, кто меня понимает."
+            ]
+        },
+        {
+            "position": (5, 2),
+            "texture": pygame.image.load("clothes.png"),
+            "dialogues": [
+                "Грязное бельё... Надо бы постирать, но времени нет.",
+                "Кажется, оно уже начинает пахнуть."
+            ]
+        },
+        {
+            "position": (1, 3),
+            "texture": pygame.image.load("bed1.png"),
+            "dialogues": [
+                "Здесь я сплю, когда удаётся выкроить время.",
+                "Иногда мне снится, что я нашёл работу мечты."
+            ]
+        },
+        {
+            "position": (1, 4),
+            "texture": pygame.image.load("bed2.png"),
+            "dialogues": [
+                "...",
+                "Пасхалки не будет."
+            ]
+        },
+        {
+            "position": (2, 4),
+            "texture": pygame.image.load("cabinet_with_clock.png"),
+            "dialogues": [
+                "Тумба с будильником. Он звонит каждое утро, но я редко встаю вовремя.",
+                "Будильник — мой главный враг."
+            ]
+        },
+        {
+            "position": (5, 4),
+            "texture": pygame.image.load("table_with_letters.png"),
+            "dialogues": [
+                "Столик с письмами. В основном это счета и уведомления об отказах.",
+                "Иногда я думаю, что лучше бы их не открывать."
+            ]
+        },
+        {
+            "position": (3, 5),
+            "texture": pygame.image.load("room_window.png"),
+            "dialogues": [
+                "Окно. За ним — огромный мир, который я пока не могу себе позволить.",
+                "Иногда я смотрю в окно и мечтаю о лучшей жизни."
+            ]
+        }
+    ],
+    "hallway": [
+        {
+            "position": (7, 2),  # Тумба с вазой
+            "texture": pygame.image.load("vase_table.png"),  # Текстура объекта
+            "dialogues": [
+                "Обычный на вид столик с красивыми цветами.",
+                "Цветы правда искусственные... как и всё здесь."
+            ]
+        }
+    ]
+}
+
+
+def wait(time):
+    start = pygame.time.get_ticks()
+    while pygame.time.get_ticks() - start < time:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
 
 # Функция для отображения диалога
 def show_dialog(dialog):
     while True:
-        screen.fill(BLACK)
-
         # Отрисовка диалога
         dialog.update()
         if dialog.finished:
@@ -82,7 +227,6 @@ def show_dialog(dialog):
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_z:
                     if dialog.next_dialogue():
-                        dialog = None
                         return
 
         pygame.display.flip()
@@ -135,92 +279,184 @@ def draw_wrapped_text(text, font, color, surface, x, y, max_width):
 
 # Функция для отрисовки текста в диалогах
 def draw_dialog_text(text, font, color, surface, x, y):
-    draw_wrapped_text(text, font, color, surface, x, y, SCREEN_WIDTH - 300)  # Уменьшили ширину текста
+    draw_wrapped_text(text, font, color, surface, x, y, SCREEN_WIDTH - 300)
+
+
+def load_object_textures(objects_data):
+    for location, objects in objects_data.items():
+        for obj in objects:
+            texture_path = obj["texture"]
+            try:
+                obj["texture_surface"] = pygame.image.load(texture_path)  # Загружаем текстуру
+            except FileNotFoundError:
+                print(f"Ошибка: файл текстуры '{texture_path}' не найден.")
+                obj["texture_surface"] = pygame.Surface((TILE_SIZE, TILE_SIZE))  # Заглушка, если текстура не найдена
+                obj["texture_surface"].fill((255, 0, 0))  # Красный квадрат как заглушка
+    return objects_data
+
+
+def draw_objects(screen, current_map, camera_x, camera_y, current_map_name):
+    map_width = len(current_map[0])
+    map_height = len(current_map)
+    center_map = map_width < VIEW_WIDTH or map_height < VIEW_HEIGHT
+
+    if center_map:
+        offset_x = (SCREEN_WIDTH - map_width * SCALED_TILE_SIZE) // 2
+        offset_y = (SCREEN_HEIGHT - map_height * SCALED_TILE_SIZE) // 2
+    else:
+        offset_x = (camera_x - VIEW_WIDTH // 2) * SCALED_TILE_SIZE
+        offset_y = (camera_y - VIEW_HEIGHT // 2) * SCALED_TILE_SIZE
+
+    for y in range(len(current_map)):
+        for x in range(len(current_map[0])):
+            if current_map[y][x] == '?':
+                for obj in objects_data.get(current_map_name, []):
+                    if (x, y) == obj["position"]:
+                        texture = obj.get("texture_surface", pygame.Surface((TILE_SIZE, TILE_SIZE)))
+                        scaled_texture = pygame.transform.scale(texture, (SCALED_TILE_SIZE, SCALED_TILE_SIZE))
+                        if center_map:
+                            pos_x = x * SCALED_TILE_SIZE + offset_x
+                            pos_y = y * SCALED_TILE_SIZE + offset_y
+                        else:
+                            pos_x = x * SCALED_TILE_SIZE - offset_x
+                            pos_y = y * SCALED_TILE_SIZE - offset_y
+                        screen.blit(scaled_texture, (pos_x, pos_y))
+
+            if current_map[y][x] == 'N':
+                for npc in npc_data.get(current_map_name, []):
+                    if (x, y) == npc["position"]:
+                        npc_img = pygame.image.load(npc["portrait"])
+                        scaled_img = pygame.transform.scale(npc_img, (SCALED_TILE_SIZE, SCALED_TILE_SIZE))
+                        if center_map:
+                            pos_x = x * SCALED_TILE_SIZE + offset_x
+                            pos_y = y * SCALED_TILE_SIZE + offset_y
+                        else:
+                            pos_x = x * SCALED_TILE_SIZE - offset_x
+                            pos_y = y * SCALED_TILE_SIZE - offset_y
+                        screen.blit(scaled_img, (pos_x, pos_y))
 
 
 # Функция для загрузки карты
 def load_map(file_path):
+    """
+    Загружает карту из файла и инициализирует текстуры.
+    """
     with open(file_path, 'r') as file:
-        return [list(line.strip()) for line in file]
+        map_data = [list(line.strip()) for line in file]
+
+    # Инициализация текстур для карты
+    map_textures = [[None for _ in range(len(map_data[0]))] for _ in range(len(map_data))]
+
+    for y in range(len(map_data)):
+        for x in range(len(map_data[0])):
+            if map_data[y][x] == '.':
+                map_textures[y][x] = random.choice(floor_textures)  # Выбираем текстуру пола
+            elif map_data[y][x] == '#':
+                map_textures[y][x] = random.choice(wall_textures)  # Выбираем текстуру стены
+
+    return map_data, map_textures  # Возвращаем и карту, и текстуры
 
 
-# Функция для отрисовки карты
-def draw_map(screen, map_data, camera_x, camera_y):
-    # Определяем границы видимой области
-    start_x = max(0, camera_x - VIEW_WIDTH // 2)
-    start_y = max(0, camera_y - VIEW_HEIGHT // 2)
-    end_x = min(len(map_data[0]), start_x + VIEW_WIDTH)
-    end_y = min(len(map_data), start_y + VIEW_HEIGHT)
-
-    # Отрисовка видимой области
-    for y in range(start_y, end_y):
-        for x in range(start_x, end_x):
-            # Отрисовка пола
-            screen.blit(
-                pygame.transform.scale(floor_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
-                ((x - start_x) * SCALED_TILE_SIZE, (y - start_y) * SCALED_TILE_SIZE)
-            )
-            # Отрисовка объектов
-            if map_data[y][x] == '#':
-                screen.blit(
-                    pygame.transform.scale(wall_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
-                    ((x - start_x) * SCALED_TILE_SIZE, (y - start_y) * SCALED_TILE_SIZE)
-                )
-            elif map_data[y][x] == 'D':
-                screen.blit(
-                    pygame.transform.scale(door_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
-                    ((x - start_x) * SCALED_TILE_SIZE, (y - start_y) * SCALED_TILE_SIZE)
-                )
-            elif map_data[y][x] == '?':
-                screen.blit(
-                    pygame.transform.scale(npc_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
-                    ((x - start_x) * SCALED_TILE_SIZE, (y - start_y) * SCALED_TILE_SIZE)
-                )
-
-
-# Функция для проверки, стоит ли игрок напротив объекта
-def is_facing_object(player_pos, direction, map_data, object_char):
-    x, y = player_pos
-    if direction == "up":
-        return map_data[y - 1][x] == object_char
-    elif direction == "down":
-        return map_data[y + 1][x] == object_char
-    elif direction == "left":
-        return map_data[y][x - 1] == object_char
-    elif direction == "right":
-        return map_data[y][x + 1] == object_char
-    return False
-
-
-# Функция для поиска двери на карте
-def find_door(map_data):
-    for y, row in enumerate(map_data):
-        for x, tile in enumerate(row):
-            if tile == 'D':
-                return x, y
+def find_door(cur_pos, current_map_name):
+    if current_map_name in doors_data:
+        for door in doors_data[current_map_name]:
+            if (cur_pos[0], cur_pos[1]) == door["position"]:
+                return door
     return None
 
 
-# Игровой цикл
-def game_loop():
-    player_pos = [5, 5]  # Начальная позиция игрока в комнате
-    current_map = load_map("room.txt")  # Загрузка первой карты
-    dialog = None
-    player_direction = "down"  # Направление игрока
-    camera_x, camera_y = player_pos[0], player_pos[1]  # Камера следует за игроком
+# Функция для отрисовки карты
+def draw_map(screen, map_data, map_textures, camera_x, camera_y):
+    map_width = len(map_data[0])
+    map_height = len(map_data)
+    center_map = map_width < VIEW_WIDTH or map_height < VIEW_HEIGHT
 
-    # Диалоги для NPC
-    npc_dialogues = {
-        (6, 3): ["Приветствую! Я МАШИНА.", "Я помогу тебе создать твоего персонажа.", "Начнём?"],
-        (8, 7): ["...", "Ты снова здесь?", "Что тебе нужно?"],
-    }
+    if center_map:
+        offset_x = (SCREEN_WIDTH - map_width * SCALED_TILE_SIZE) // 2
+        offset_y = (SCREEN_HEIGHT - map_height * SCALED_TILE_SIZE) // 2
+    else:
+        offset_x = (camera_x - VIEW_WIDTH // 2) * SCALED_TILE_SIZE
+        offset_y = (camera_y - VIEW_HEIGHT // 2) * SCALED_TILE_SIZE
+
+    for y in range(len(map_data)):
+        for x in range(len(map_data[0])):
+            if center_map:
+                pos_x = x * SCALED_TILE_SIZE + offset_x
+                pos_y = y * SCALED_TILE_SIZE + offset_y
+            else:
+                pos_x = x * SCALED_TILE_SIZE - offset_x
+                pos_y = y * SCALED_TILE_SIZE - offset_y
+
+            if map_textures[y][x]:
+                scaled_texture = pygame.transform.scale(map_textures[y][x], (SCALED_TILE_SIZE, SCALED_TILE_SIZE))
+                screen.blit(scaled_texture, (pos_x, pos_y))
+            if map_data[y][x] == 'D':
+                scaled_door = pygame.transform.scale(door_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE))
+                screen.blit(scaled_door, (pos_x, pos_y))
+
+
+# Функция для проверки, стоит ли игрок напротив объекта
+def get_facing_cell(player_pos, direction, map_data):
+    """
+    Возвращает содержимое клетки, на которую смотрит игрок.
+    """
+    x, y = player_pos
+    if direction == "up":
+        target_x, target_y = x, y - 1
+    elif direction == "down":
+        target_x, target_y = x, y + 1
+    elif direction == "left":
+        target_x, target_y = x - 1, y
+    elif direction == "right":
+        target_x, target_y = x + 1, y
+    else:
+        return None
+
+    if 0 <= target_x < len(map_data[0]) and 0 <= target_y < len(map_data):
+        return map_data[target_y][target_x], (target_x, target_y)
+    return None
+
+
+def interact_with_cell(player_pos, direction, current_map, current_map_name):
+    """
+    Обрабатывает взаимодействие с клеткой, на которую смотрит игрок.
+    """
+    cell_data = get_facing_cell(player_pos, direction, current_map)
+    if not cell_data:
+        return None
+
+    cell_content, (target_x, target_y) = cell_data
+
+    # Взаимодействие с объектами
+    if cell_content == '?':
+        for obj in objects_data.get(current_map_name, []):
+            if (target_x, target_y) == obj["position"]:
+                dialog = DialogBox("Аки", aki_portrait, obj["dialogues"])
+                show_dialog(dialog)
+                return None  # Возвращаем None, так как это не переход
+
+    # Взаимодействие с NPC
+    if cell_content == 'N':
+        for npc in npc_data.get(current_map_name, []):
+            if (target_x, target_y) == npc["position"]:
+                dialog = DialogBox(npc["name"], npc["portrait"], npc["dialogues"])
+                show_dialog(dialog)
+                return None  # Возвращаем None, так как это не переход
+
+    # Взаимодействие с дверью
+    if cell_content == 'D':
+        door = find_door((target_x, target_y), current_map_name)
+        if door:
+            return door["target_position"], door["target_map"]  # Возвращаем позицию и имя карты
+
+    return None
 
 
 # Класс для диалогов
 class DialogBox:
-    def __init__(self, name, portrait, dialogues):
+    def __init__(self, name, in_portrait, dialogues):
         self.name = name
-        self.portrait = portrait
+        self.portrait = in_portrait
         self.dialogues = dialogues
         self.current_dialogue = 0
         self.current_text = ""
@@ -250,7 +486,7 @@ class DialogBox:
     def draw(self, screen):
         # Создаём полупрозрачный фон для диалога
         dialog_bg = pygame.Surface((SCREEN_WIDTH - 100, 200), pygame.SRCALPHA)
-        dialog_bg.fill((0, 0, 0, 128))  # Полупрозрачный чёрный
+        dialog_bg.fill((50, 50, 50, 200))
         screen.blit(dialog_bg, (50, SCREEN_HEIGHT - 250))
 
         # Отрисовка портрета (справа, квадрат 150x150)
@@ -275,6 +511,27 @@ def draw_menu_text(text, font, color, surface, x, y):
 def draw_button(text, font, color, surface, x, y, width, height):
     pygame.draw.rect(surface, color, (x, y, width, height))
     draw_menu_text(text, font, BLACK, surface, x + width // 2, y + height // 2)
+
+
+def calculate_camera(player_pos, map_data):
+    """
+    Рассчитывает позицию камеры, чтобы игрок был в центре экрана.
+    Если карта меньше зоны видимости, центрирует карту на экране.
+    """
+    map_width = len(map_data[0])
+    map_height = len(map_data)
+
+    # Если карта меньше зоны видимости, центрируем её
+    if map_width < VIEW_WIDTH or map_height < VIEW_HEIGHT:
+        # Центрируем камеру на середине карты
+        camera_x = map_width // 2
+        camera_y = map_height // 2
+    else:
+        # Центрируем камеру на игроке, но не выходим за пределы карты
+        camera_x = max(VIEW_WIDTH // 2, min(player_pos[0], map_width - VIEW_WIDTH // 2 - 1))
+        camera_y = max(VIEW_HEIGHT // 2, min(player_pos[1], map_height - VIEW_HEIGHT // 2 - 1))
+
+    return camera_x, camera_y
 
 
 # Меню паузы
@@ -365,6 +622,47 @@ def settings_menu():
         pygame.display.flip()
 
 
+def show_captcha():
+    # Генерация случайного текста для капчи
+    captcha_text = ''.join(random.choices('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', k=6))
+
+    # Создание изображения капчи
+    image = ImageCaptcha(width=300, height=100)
+    image.generate(captcha_text)
+
+    # Сохранение и отображение капчи
+    image.write(captcha_text, 'captcha.png')
+    captcha_image = pygame.image.load('captcha.png')
+
+    # Отрисовка капчи на экране
+    screen.blit(captcha_image, (SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2 - 50))
+    pygame.display.flip()
+
+    # Ожидание ввода от пользователя
+    input_text = ""
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    return input_text == captcha_text
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                else:
+                    input_text += event.unicode
+
+
+def show_letter():
+    letter_image = pygame.image.load("letter.png")  # Загрузите изображение письма
+    screen.blit(letter_image, (SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2 - 100))
+    pygame.display.flip()
+
+    # Ожидание закрытия письма
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return
+
+
 # Главное меню
 def main_menu():
     selected_button = 0
@@ -405,13 +703,14 @@ def main_menu():
 
 # Новая игра
 def new_game():
-    global npc_name
+    main_game()
     # Начальный диалог
     dialogues = [
-        "Приветствую, Игрок!",
+        f"Приветствую, {username}!",
         "Я - МАШИНА.",
         "Я помогу тебе создать твоего персонажа для дальнейшей игры.",
-        "Я дам тебе выбрать внешность своего персонажа, а после задам несколько вопросов, чтобы определить его характер.",
+        "Я дам тебе выбрать внешность своего персонажа, а после задам несколько вопросов, "
+        "чтобы определить его характер.",
         "Всё понятно? Начнём!"
     ]
     dialog = DialogBox(npc_name, portrait, dialogues)
@@ -452,24 +751,27 @@ def new_game():
 def character_editor():
     global player_colors
     selected_part = 0
+    english_keys = ["hair", "shirt", "pants", "shoes"]
     parts = ["Волосы", "Майка", "Штаны", "Обувь"]
-    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 165, 0), (128, 0, 128)]
+    colors = {
+        "Волосы": [(210, 180, 140), (139, 69, 19), (255, 223, 186), (192, 192, 192)],  # Цвета волос
+        "Майка": [(128, 0, 0), (0, 128, 0), (0, 0, 128), (128, 128, 0)],  # Менее яркие цвета майки
+        "Штаны": [(64, 64, 64), (105, 105, 105), (169, 169, 169), (128, 128, 128)],  # Убраны тусклые цвета
+        "Обувь": [(139, 69, 19), (101, 67, 33), (205, 133, 63), (160, 82, 45)]  # Цвета обуви
+    }
     selected_color = 0
     selected_button = 0  # 0 - выбор части, 1 - выбор цвета, 2 - кнопка "Готово"
 
     while True:
         screen.fill(BLACK)
 
+        # Серый квадрат для фона предпросмотра
+        pygame.draw.rect(screen, (100, 100, 100), (SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2 - 150, 300, 300))
+
         # Отрисовка персонажа
-        player_surface = pygame.Surface((SCALED_TILE_SIZE * 2, SCALED_TILE_SIZE * 2))
-        player_surface.fill(player_colors["hair"])  # Волосы
-        player_surface.fill(player_colors["shirt"],
-                            (0, SCALED_TILE_SIZE // 2, SCALED_TILE_SIZE * 2, SCALED_TILE_SIZE))  # Майка
-        player_surface.fill(player_colors["pants"],
-                            (0, SCALED_TILE_SIZE, SCALED_TILE_SIZE * 2, SCALED_TILE_SIZE))  # Штаны
-        player_surface.fill(player_colors["shoes"],
-                            (0, SCALED_TILE_SIZE * 1.5, SCALED_TILE_SIZE * 2, SCALED_TILE_SIZE // 2))  # Обувь
-        screen.blit(player_surface, (SCREEN_WIDTH // 2 - SCALED_TILE_SIZE, SCREEN_HEIGHT // 2 - SCALED_TILE_SIZE))
+        player_surface = pygame.Surface((300, 300), pygame.SRCALPHA)  # Увеличиваем размер персонажа
+        draw_player_preview(player_surface, player_colors)
+        screen.blit(player_surface, (SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 - 145))  # Центрируем
 
         # Отрисовка выбора части
         for i, part in enumerate(parts):
@@ -477,7 +779,8 @@ def character_editor():
             draw_button(part, small_font, color, screen, 50, 50 + i * 70, 200, 50)
 
         # Отрисовка выбора цвета
-        for i, color in enumerate(colors):
+        current_part = parts[selected_part]
+        for i, color in enumerate(colors[current_part]):
             border_color = WHITE if i == selected_color and selected_button == 1 else BLACK
             pygame.draw.rect(screen, color, (300 + i * 70, 50, 50, 50))
             pygame.draw.rect(screen, border_color, (300 + i * 70, 50, 50, 50), 3)
@@ -496,12 +799,12 @@ def character_editor():
                     if selected_button == 0:  # Выбор части
                         selected_part = (selected_part - 1) % len(parts)
                     elif selected_button == 1:  # Выбор цвета
-                        selected_color = (selected_color - 1) % len(colors)
+                        selected_color = (selected_color - 1) % len(colors[current_part])
                 if event.key == pygame.K_RIGHT:
                     if selected_button == 0:  # Выбор части
                         selected_part = (selected_part + 1) % len(parts)
                     elif selected_button == 1:  # Выбор цвета
-                        selected_color = (selected_color + 1) % len(colors)
+                        selected_color = (selected_color + 1) % len(colors[current_part])
                 if event.key == pygame.K_DOWN:
                     selected_button = (selected_button + 1) % 3  # Переключаем между частями, цветами и кнопкой
                 if event.key == pygame.K_UP:
@@ -510,12 +813,71 @@ def character_editor():
                     if selected_button == 0:  # Выбор части
                         selected_button = 1  # Переходим к выбору цвета
                     elif selected_button == 1:  # Выбор цвета
-                        player_colors[parts[selected_part].lower()] = colors[selected_color]
+                        player_colors[english_keys[selected_part]] = colors[current_part][selected_color]
                     elif selected_button == 2:  # Кнопка "Готово"
+                        save_player_skin(player_colors)
                         confirm_character()
                         return
 
         pygame.display.flip()
+
+
+def draw_player_preview(surface, colors):
+    # Загрузка закодированного скина
+    with open("coded_player.txt", "r") as file:
+        coded_skin = [line.strip() for line in file]
+
+    # Цвета для замены
+    color_map = {
+        'H': colors["hair"],
+        'T': colors["shirt"],
+        'D': tuple(max(0, c - 50) for c in colors["shirt"]),  # Темнее майка
+        'S': colors["pants"],
+        'C': tuple(max(0, c - 50) for c in colors["pants"]),  # Темнее штаны
+        'B': colors["shoes"],
+        'O': (0, 0, 0),
+        'Q': (255, 178, 127),
+        'W': (255, 255, 255),
+        'G': (76, 255, 0),
+        'M': (224, 155, 112)
+    }
+
+    # Отрисовка скина
+    for y, line in enumerate(coded_skin):
+        for x, char in enumerate(line):
+            if char in color_map:
+                pygame.draw.rect(surface, color_map[char], (x * 8, y * 8, 8, 8))
+
+
+def save_player_skin(colors):
+    # Создание поверхности для скина
+    skin_surface = pygame.Surface((50, 50), pygame.SRCALPHA)
+    with open("coded_player.txt", "r") as file:
+        coded_skin = [line.strip() for line in file]
+
+    # Цвета для замены
+    color_map = {
+        'H': colors["hair"],
+        'T': colors["shirt"],
+        'D': tuple(max(0, c - 50) for c in colors["shirt"]),  # Темнее майка
+        'S': colors["pants"],
+        'C': tuple(max(0, c - 50) for c in colors["pants"]),  # Темнее штаны
+        'B': colors["shoes"],
+        'O': (0, 0, 0),
+        'Q': (255, 178, 127),
+        'W': (255, 255, 255),
+        'G': (76, 255, 0),
+        'M': (224, 155, 112)
+    }
+
+    # Отрисовка скина
+    for y, line in enumerate(coded_skin):
+        for x, char in enumerate(line):
+            if char in color_map:
+                pygame.draw.rect(skin_surface, color_map[char], (x + 13, y + 7, 1, 1))  # Рисуем пиксели
+
+    # Сохранение скина
+    pygame.image.save(skin_surface, "player.png")
 
 
 # Подтверждение выбора персонажа
@@ -533,7 +895,7 @@ def confirm_character():
         screen.blit(dialog_bg, (50, SCREEN_HEIGHT - 250))
 
         # Отрисовка текста
-        draw_dialog_text(f"Итак, Игрок, это окончательное решение?", dialog_font, WHITE, screen, 70,
+        draw_dialog_text(f"Итак, {username}, это окончательное решение?", dialog_font, WHITE, screen, 70,
                          SCREEN_HEIGHT - 230)
 
         # Отрисовка кнопок "Да" и "Нет"
@@ -579,21 +941,11 @@ def name_input():
     selected_key = (0, 0)  # Выбранная клавиша (строка, символ)
     selected_button = 0  # 0 - клавиатура, 1 - кнопка "Удалить", 2 - кнопка "Готово"
 
+    # Анимация диалога
+    show_machine_dialog("Отлично, как его будут звать?")
+
     while True:
         screen.fill(BLACK)
-
-        # Отрисовка диалога от МАШИНЫ
-        dialog_bg = pygame.Surface((SCREEN_WIDTH - 100, 200), pygame.SRCALPHA)
-        dialog_bg.fill((0, 0, 0, 128))  # Полупрозрачный чёрный
-        screen.blit(dialog_bg, (50, 50))  # Подняли диалог выше
-
-        # Отрисовка портрета МАШИНЫ
-        portrait_scaled = pygame.transform.scale(portrait, (150, 150))  # Квадратный портрет
-        screen.blit(portrait_scaled, (SCREEN_WIDTH - 200, 75))  # Центрируем по вертикали
-
-        # Отрисовка текста
-        draw_dialog_text("МАШИНА", dialog_font, WHITE, screen, 70, 70)
-        draw_dialog_text("Отлично, как его будут звать?", dialog_font, WHITE, screen, 70, 110)
 
         # Отрисовка строки ввода
         input_bg = pygame.Surface((SCREEN_WIDTH - 300, 50), pygame.SRCALPHA)
@@ -673,28 +1025,27 @@ def name_input():
 
 # Завершение создания персонажа
 def finalize_character(name):
-    global npc_name
     # Первая фраза МАШИНЫ
     screen.fill(BLACK)
-    show_machine_dialog(f"{name}! {npc_name}, ты выбрал чудесное имя! Начинаю создание персонажа...")
+    show_machine_dialog(f"{name}! {username}, ты выбрал чудесное имя! Начинаю создание персонажа...")
     pygame.display.flip()
 
     # Отображение фразы "Загрузка..." по центру экрана
     screen.fill(BLACK)
     draw_centered_text("Загрузка...", dialog_font, WHITE, screen, SCREEN_HEIGHT // 2)
     pygame.display.flip()
-    pygame.time.delay(4000)  # Задержка 3 секунды
+    wait(4000)  # Задержка 3 секунды
 
     # Отображение фразы "Перегрузка системы..." по центру экрана
     screen.fill(BLACK)
     draw_centered_text("Перегрузка системы...", dialog_font, WHITE, screen, SCREEN_HEIGHT // 2)
     pygame.display.flip()
-    pygame.time.delay(2000)  # Задержка 2 секунды
+    wait(2000)  # Задержка 2 секунды
 
     # Диалог МАШИНЫ после перегрузки системы
     machine_dialog = [
         "О нет, слишком много ошибок.",
-        f"Извини, {npc_name}, но мне придётся отложить {name}...",
+        f"Извини, {username}, но мне придётся отложить {name}...",
         "Твоим 'компаньоном' в данной истории будет...",
         "Аки"
     ]
@@ -715,39 +1066,88 @@ def finalize_character(name):
         screen.fill(BLACK)
         draw_centered_text(line, dialog_font, WHITE, screen, SCREEN_HEIGHT // 2 - 50)
         pygame.display.flip()
-        pygame.time.delay(10000)  # Время для прочтения
+        wait(10000)  # Время для прочтения
 
-    # Переход к основной игре
-    main_game()
+    # Плавный переход к игре
+    transition_to_game()
+
+
+def transition_to_game():
+    current_map = load_map("room.txt")
+    load_object_textures(objects_data)  # Загружаем текстуры объектов
+    player_pos = [2, 3]
+    camera_x, camera_y = calculate_camera(player_pos, current_map)
+
+    # Фаза 1: Медленное открытие глаз (2 секунды)
+    for alpha in range(255, 50, -5):
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.fill(BLACK)
+        overlay.set_alpha(alpha)
+        screen.blit(overlay, (0, 0))
+        draw_map(screen, current_map, camera_x, camera_y)
+        draw_objects(screen, current_map, camera_x, camera_y, 'room')
+        pygame.display.flip()
+        pygame.time.delay(40)
+
+    # Фаза 2: Быстрое закрытие (0.3 секунды)
+    for height in range(0, SCREEN_HEIGHT // 2, 15):
+        screen.fill(BLACK)
+        draw_map(screen, current_map, camera_x, camera_y)
+        draw_objects(screen, current_map, camera_x, camera_y, 'room')
+        pygame.draw.rect(screen, BLACK, (0, 0, SCREEN_WIDTH, height))
+        pygame.draw.rect(screen, BLACK, (0, SCREEN_HEIGHT - height, SCREEN_WIDTH, height))
+        pygame.display.flip()
+        pygame.time.delay(20)
+
+    # Фаза 3: Финал открытия (1 секунда)
+    for height in range(SCREEN_HEIGHT // 2, 0, -10):
+        screen.fill(BLACK)
+        draw_map(screen, current_map, camera_x, camera_y)
+        draw_objects(screen, current_map, camera_x, camera_y, 'room')
+        pygame.draw.rect(screen, BLACK, (0, 0, SCREEN_WIDTH, height))
+        pygame.draw.rect(screen, BLACK, (0, SCREEN_HEIGHT - height, SCREEN_WIDTH, height))
+        pygame.display.flip()
+        pygame.time.delay(30)
+
+    dialog = DialogBox('Аки', aki_portrait, ["Ещё один день... Пора собирать..."])
+    show_dialog(dialog)
+
+    door_sound = pygame.mixer.Sound("doorbell.wav")
+    door_sound.play()
+
+    # Запуск основной игры
+    main_game(current_map)
 
 
 # Основная игра
 def main_game():
-
-    player_pos = [5, 5]  # Начальная позиция игрока в комнате
-    current_map = load_map("room.txt")  # Загрузка первой карты
-    dialog = None
-    player_direction = "down"  # Направление игрока
-    camera_x, camera_y = player_pos[0], player_pos[1]  # Камера следует за игроком
+    current_map_name = "room.txt"
+    current_map, map_textures = load_map(current_map_name)  # Загружаем карту и текстуры
+    player_pos = [2, 3]
+    player_direction = "down"
+    camera_x, camera_y = calculate_camera(player_pos, current_map)
 
     while True:
-        screen.fill(BLACK)  # Очистка экрана
-
-        # Отрисовка карты
-        draw_map(screen, current_map, camera_x, camera_y)
+        screen.fill(BLACK)
+        draw_map(screen, current_map, map_textures, camera_x, camera_y)
+        draw_objects(screen, current_map, camera_x, camera_y, current_map_name.split('.')[0])
 
         # Отрисовка игрока
-        player_screen_x = (player_pos[0] - (camera_x - VIEW_WIDTH // 2)) * SCALED_TILE_SIZE
-        player_screen_y = (player_pos[1] - (camera_y - VIEW_HEIGHT // 2)) * SCALED_TILE_SIZE
+        map_width = len(current_map[0])
+        map_height = len(current_map)
+        if map_width < VIEW_WIDTH or map_height < VIEW_HEIGHT:
+            offset_x = (SCREEN_WIDTH - map_width * SCALED_TILE_SIZE) // 2
+            offset_y = (SCREEN_HEIGHT - map_height * SCALED_TILE_SIZE) // 2
+        else:
+            offset_x = (camera_x - VIEW_WIDTH // 2) * SCALED_TILE_SIZE
+            offset_y = (camera_y - VIEW_HEIGHT // 2) * SCALED_TILE_SIZE
+
+        player_screen_x = player_pos[0] * SCALED_TILE_SIZE - offset_x
+        player_screen_y = player_pos[1] * SCALED_TILE_SIZE - offset_y
         screen.blit(
-            pygame.transform.scale(player_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
+            pygame.transform.scale(aki_image, (SCALED_TILE_SIZE, SCALED_TILE_SIZE)),
             (player_screen_x, player_screen_y)
         )
-
-        # Отрисовка диалога
-        if dialog:
-            dialog.update()
-            dialog.draw(screen)
 
         # Обработка событий
         for event in pygame.event.get():
@@ -755,7 +1155,15 @@ def main_game():
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                if not dialog or dialog.finished:
+                if event.key == pygame.K_z:  # Взаимодействие
+                    result = interact_with_cell(player_pos, player_direction, current_map,
+                                                current_map_name.split('.')[0])
+                    if result:  # Если произошёл переход через дверь
+                        current_map, map_textures = load_map(result[1])  # Загружаем новую карту и текстуры
+                        player_pos = result[0]
+                        current_map_name = result[1].split('.')[0]
+                        camera_x, camera_y = calculate_camera(player_pos, current_map)
+                else:  # Движение
                     new_x, new_y = player_pos[0], player_pos[1]
                     if event.key == pygame.K_UP:
                         new_y -= 1
@@ -769,42 +1177,14 @@ def main_game():
                     if event.key == pygame.K_RIGHT:
                         new_x += 1
                         player_direction = "right"
+
                     # Проверка коллизии
                     if 0 <= new_x < len(current_map[0]) and 0 <= new_y < len(current_map):
-                        if current_map[new_y][new_x] not in ['#', 'D', '?']:  # Если нет стены, двери или NPC
+                        if current_map[new_y][new_x] not in ['#', '?', 'N', 'D']:
                             player_pos[0], player_pos[1] = new_x, new_y
-                    # Обновление камеры
-                    camera_x = player_pos[0]
-                    camera_y = player_pos[1]
-                    # Ограничение камеры краями карты
-                    camera_x = max(VIEW_WIDTH // 2, min(camera_x, len(current_map[0]) - VIEW_WIDTH // 2 - 1))
-                    camera_y = max(VIEW_HEIGHT // 2, min(camera_y, len(current_map) - VIEW_HEIGHT // 2 - 1))
 
-                if event.key == pygame.K_z:  # Взаимодействие
-                    if dialog:
-                        if dialog.finished:
-                            dialog = None  # Завершаем диалог
-                        else:
-                            dialog.next_dialogue()  # Переход к следующей реплике
-                    else:
-                        if is_facing_object(player_pos, player_direction, current_map, '?'):  # NPC
-                            npc_pos = (player_pos[0], player_pos[1] - 1) if player_direction == "up" else \
-                                (player_pos[0], player_pos[1] + 1) if player_direction == "down" else \
-                                    (player_pos[0] - 1, player_pos[1]) if player_direction == "left" else \
-                                        (player_pos[0] + 1, player_pos[1])
-                            if npc_pos in npc_dialogues:
-                                dialog = DialogBox("NPC", portrait, npc_dialogues[npc_pos])
-                        elif is_facing_object(player_pos, player_direction, current_map, 'D'):  # Дверь
-                            if current_map == load_map("room.txt"):  # Переход из комнаты на улицу
-                                current_map = load_map("street.txt")
-                                door_pos = find_door(current_map)  # Ищем дверь на улице
-                                if door_pos:
-                                    player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
-                            elif current_map == load_map("street.txt"):  # Переход с улицы в комнату
-                                current_map = load_map("room.txt")
-                                door_pos = find_door(current_map)  # Ищем дверь в комнате
-                                if door_pos:
-                                    player_pos = [door_pos[0], door_pos[1] + 1]  # Появляемся напротив двери
+                    # Обновление камеры
+                    camera_x, camera_y = calculate_camera(player_pos, current_map)
 
         pygame.display.flip()
 
