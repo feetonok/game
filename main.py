@@ -82,8 +82,9 @@ npc_data = {
     "room": [],  # NPC в комнате
     "hallway": [
         {
-            "position": (5, 4),
+            "position": (4, 3),
             "name": "Почтальон",
+            "tile": "postman.png",
             "portrait": "postman_portrait.png",
             "dialogues": [
                 "Здравствуйте! Вы недавно отправляли заявку по поиску работы, это вы?",
@@ -96,6 +97,7 @@ npc_data = {
         {
             "position": (10, 5),
             "name": "Рыбак",
+            "tile": "fisherman.png",
             "portrait": "fisherman_portrait.png",
             "dialogues": [
                 "Здаров малой!",
@@ -189,7 +191,7 @@ objects_data = {
     ],
     "hallway": [
         {
-            "position": (7, 2),  # Тумба с вазой
+            "position": (6, 1),  # Тумба с вазой
             "texture": pygame.image.load("vase_table.png"),  # Текстура объекта
             "dialogues": [
                 "Обычный на вид столик с красивыми цветами.",
@@ -325,7 +327,7 @@ def draw_objects(screen, current_map, camera_x, camera_y, current_map_name):
             if current_map[y][x] == 'N':
                 for npc in npc_data.get(current_map_name, []):
                     if (x, y) == npc["position"]:
-                        npc_img = pygame.image.load(npc["portrait"])
+                        npc_img = pygame.image.load(npc["tile"])
                         scaled_img = pygame.transform.scale(npc_img, (SCALED_TILE_SIZE, SCALED_TILE_SIZE))
                         if center_map:
                             pos_x = x * SCALED_TILE_SIZE + offset_x
@@ -490,7 +492,7 @@ class DialogBox:
         screen.blit(dialog_bg, (50, SCREEN_HEIGHT - 250))
 
         # Отрисовка портрета (справа, квадрат 150x150)
-        portrait_scaled = pygame.transform.scale(self.portrait, (150, 150))  # Квадратный портрет
+        portrait_scaled = pygame.transform.scale(pygame.image.load(self.portrait), (150, 150))  # Квадратный портрет
         screen.blit(portrait_scaled, (SCREEN_WIDTH - 200, SCREEN_HEIGHT - 250 + 25))  # Центрируем по вертикали
 
         # Отрисовка имени
